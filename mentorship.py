@@ -2,6 +2,7 @@ import streamlit as st
 import boto3
 import time
 import json
+import pandas as pd 
 
 # Initialize Textract client
 textract_client = boto3.client('textract', region_name='us-east-1')
@@ -10,6 +11,18 @@ textract_client = boto3.client('textract', region_name='us-east-1')
 s3_client = boto3.client('s3')
 bucket_name = 'unchanged-cvs'
 extracted_data_bucket = 'extracted-cvs-data'
+occupations_bucket = 'occupation-titles'
+
+# Function to load occupation titles from S3
+def load_occupations_from_s3(bucket_name, key):
+    s3_client = boto3.client('s3')
+    response = s3_client.get_object(Bucket=bucket_name, Key=key)
+    content = response['Body'].read().decode('utf-8')
+    occupations = json.loads(content)
+    return occupations
+
+# Load occupations from S3
+occupations = load_occupations_from_s3(occupations_bucket, 'occupations.json')
 
 # Function to upload a file to S3 with a key
 def upload_file_to_s3(file, key):
@@ -100,9 +113,10 @@ def call_bedrock_api(input_text):
         return None
 
 # Function to display the form
-def intro_form():
+def intro_form(occupations):
     with st.form("Employee Details"):
         user_name = st.text_input("Name")
+        user_occupations = st.multiselect("Select your desired occupations:", occupations)
         user_cv = st.file_uploader("Upload your CV below", type=["pdf", "docx"])
         submitted = st.form_submit_button("Submit")
     if submitted and user_name and user_cv:
@@ -115,8 +129,12 @@ def intro_form():
         st.session_state.show_form = False
         st.write("File uploaded and analyzed successfully!")
 
-         # Upload extracted data to S3
+        # Process and store extracted data
         extracted_data = process_textract_response(response)
+        extracted_data['desired_occupations'] = user_occupations
+        extracted_data['cv_reference'] = f"s3://{bucket_name}/{file_key}"
+
+         # Upload extracted data to S3
         extracted_data_key = user_name.replace(' ', '_') + "_extracted.json"
         upload_extracted_data_to_s3(extracted_data, extracted_data_key)
 
@@ -147,7 +165,7 @@ with st.chat_message("assistant"):
 # Control display of the intro form
 if st.session_state.show_form:
     with st.chat_message("assistant"):
-        intro_form()
+        intro_form(occupations)
 
 if prompt:
     # display user messages and save it to the chat history
