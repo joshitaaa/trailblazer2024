@@ -4,6 +4,9 @@ import time
 import json
 import pandas as pd 
 
+from queryKB import queryCourse, querySkill
+from queryLLM import LLM
+
 import configparser
 credents = configparser.ConfigParser()
 credents.read_file(open('credential.conf'))
@@ -12,6 +15,9 @@ credents.read_file(open('credential.conf'))
 aws_key = credents["AWS"]["KEY"]
 aws_secret = credents["AWS"]["SECRET"]
 region = credents["AWS"]["REGION"]
+
+# Knowledge base id
+kb_id = "RX7P9LOSZ5"
 
 # Initialize Textract client
 textract_client = boto3.client('textract', aws_access_key_id=aws_key,
@@ -107,53 +113,19 @@ def process_textract_response(response):
 
     return extracted_data
 
-# Function to call Bedrock API
-# def call_bedrock_api(input_text):
-#     try:
-#         bedrock_runtime = boto3.client(service_name = 'bedrock-agent-runtime',aws_access_key_id=aws_key,
-#                             aws_secret_access_key=aws_secret, region_name = region)
-#         response = bedrock_runtime.invoke_model(
-#             modelId="amazon.titan-text-express-v1:0:8k",
-#             ContentType="application/json",
-#             Body=json.dumps({"input": input_text}),
-#         )
-#         result = json.loads(response["Body"].read())
-#         return result
-#     except Exception as e:
-#         st.error(f"Error calling Bedrock API: {e}")
-#         return None
+extracted_data_final = ''
+job = ''
 
-def promptFlow(query):
-    bedrock_agent_runtime = boto3.client(service_name = 'bedrock-agent-runtime',aws_access_key_id=aws_key,
-                            aws_secret_access_key=aws_secret, region_name = 'us-east-1')
-    response = bedrock_agent_runtime.invoke_flow(
-    flowIdentifier = 'WC43BJ7IQ7',
-    flowAliasIdentifier = '9D5NOYH7DQ',
-    inputs = [
-        { 
-            "content": { 
-                "document": query + ". My desired occupations is " + st.session_state.desired_occupations + ". S3 objectkey is " + st.session_state.extracted_data_key
-            },
-            "nodeName": "FlowInputNode",
-            "nodeOutputName": "document"
-        }
-    ])
-    event_stream = response["responseStream"]
-    print(event_stream)
-    document_content = ""
-    for event in event_stream:
-        print(event)
-        # print(json.dumps(event, indent=2, ensure_ascii=False))
-        if "flowOutputEvent" in event:
-            document_content = event["flowOutputEvent"]["content"]["document"]
-            break
-    return document_content
+experience_levels = ["Internship", "Entry level", "Associate", "Mid-Senior level", "Director", "Executive"]
+
 
 # Function to display the form
 def intro_form(occupations):
     with st.form("Employee Details"):
         user_name = st.text_input("Name")
         user_occupations = st.multiselect("Select your desired occupations:", occupations)
+        user_experience_level = st.selectbox("Select your experience level:", experience_levels)
+        job = occupations
         user_cv = st.file_uploader("Upload your CV below", type=["pdf", "docx"])
         submitted = st.form_submit_button("Submit")
     if submitted and user_name and user_cv:
@@ -168,14 +140,14 @@ def intro_form(occupations):
 
         # Process and store extracted data
         extracted_data = process_textract_response(response)
-        st.session_state.desired_occupations = ", ".join(user_occupations)
-        # extracted_data['desired_occupations'] = user_occupations
+        extracted_data['desired_occupations'] = user_occupations
+        extracted_data['experience_level'] = user_experience_level
         extracted_data['cv_reference'] = f"s3://{bucket_name}/{file_key}"
-        print(extracted_data)
+        extracted_data_final = json.dumps(extracted_data).encode('utf-8')
+        print(extracted_data_final)
         
          # Upload extracted data to S3
         extracted_data_key = user_name.replace(' ', '_') + "_extracted.json"
-        st.session_state.extracted_data_key = extracted_data_key
         upload_extracted_data_to_s3(extracted_data, extracted_data_key)
 
 st.set_page_config(page_title="Mentorship")
@@ -216,9 +188,17 @@ if prompt:
     # display AI messages and save it to the chat history
     with st.chat_message("assistant"):
         with st.spinner("Waiting for a response"):
-            response = promptFlow(prompt)
+            # Get KB for skills and courses 
+            skills = querySkill(kb_id, aws_key, aws_secret, job, prompt)
+            courses = queryCourse(kb_id, aws_key, aws_secret, job, prompt)
+            print(skills)
+            print("-----")
+            print(courses)
+            print("-----")
+
+            # Query LLM with context
+            response = LLM(aws_key, aws_secret, prompt, extracted_data_final, courses, skills)
             print(response)
-            # response = call_bedrock_api(prompt)
         if response:
             st.markdown(response)
 
