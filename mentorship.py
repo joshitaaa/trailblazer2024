@@ -221,5 +221,6 @@ if prompt:
             # response = call_bedrock_api(prompt)
         if response:
             st.markdown(response)
+            st.download_button('Download Training Recommendations', response, file_name="TrainingRecommendations.txt", mime="text/plain")
 
     st.session_state.chat_history.append({"role": "assistant", "content": response if response else "Error in response"})
