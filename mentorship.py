@@ -111,12 +111,15 @@ def call_bedrock_api(input_text):
     except Exception as e:
         st.error(f"Error calling Bedrock API: {e}")
         return None
+    
+experience_levels = ["Internship", "Entry level", "Associate", "Mid-Senior level", "Director", "Executive"]
 
 # Function to display the form
 def intro_form(occupations):
     with st.form("Employee Details"):
         user_name = st.text_input("Name")
         user_occupations = st.multiselect("Select your desired occupations:", occupations)
+        user_experience_level = st.selectbox("Select your experience level:", experience_levels)
         user_cv = st.file_uploader("Upload your CV below", type=["pdf", "docx"])
         submitted = st.form_submit_button("Submit")
     if submitted and user_name and user_cv:
@@ -132,6 +135,7 @@ def intro_form(occupations):
         # Process and store extracted data
         extracted_data = process_textract_response(response)
         extracted_data['desired_occupations'] = user_occupations
+        extracted_data['experience_level'] = user_experience_level
         extracted_data['cv_reference'] = f"s3://{bucket_name}/{file_key}"
 
          # Upload extracted data to S3
