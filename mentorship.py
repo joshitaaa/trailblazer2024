@@ -115,6 +115,7 @@ def process_textract_response(response):
 
 extracted_data_final = ''
 job = ''
+exp = ''
 
 experience_levels = ["Internship", "Entry level", "Associate", "Mid-Senior level", "Director", "Executive"]
 
@@ -125,30 +126,32 @@ def intro_form(occupations):
         user_name = st.text_input("Name")
         user_occupations = st.multiselect("Select your desired occupations:", occupations)
         user_experience_level = st.selectbox("Select your experience level:", experience_levels)
+        exp = user_experience_level
         job = occupations
         user_cv = st.file_uploader("Upload your CV below", type=["pdf", "docx"])
         submitted = st.form_submit_button("Submit")
-    if submitted and user_name and user_cv:
-        # Upload CV to S3
-        file_key = user_name.replace(' ', '_') + ".pdf"
-        upload_file_to_s3(user_cv, file_key)
-        
-        # Analyze CV using Textract
-        response = extract_skills_from_pdf(bucket_name, file_key)
-        st.session_state.show_form = False
-        st.write("File uploaded and analyzed successfully!")
+    with st.spinner("File is uploading and analyzing..."):
+        if submitted and user_name and user_cv:
+            # Upload CV to S3
+            file_key = user_name.replace(' ', '_') + ".pdf"
+            upload_file_to_s3(user_cv, file_key)
+            
+            # Analyze CV using Textract
+            response = extract_skills_from_pdf(bucket_name, file_key)
+            st.session_state.show_form = False
+            st.write("File uploaded and analyzed successfully!")
 
-        # Process and store extracted data
-        extracted_data = process_textract_response(response)
-        extracted_data['desired_occupations'] = user_occupations
-        extracted_data['experience_level'] = user_experience_level
-        extracted_data['cv_reference'] = f"s3://{bucket_name}/{file_key}"
-        extracted_data_final = json.dumps(extracted_data).encode('utf-8')
-        print(extracted_data_final)
-        
-         # Upload extracted data to S3
-        extracted_data_key = user_name.replace(' ', '_') + "_extracted.json"
-        upload_extracted_data_to_s3(extracted_data, extracted_data_key)
+            # Process and store extracted data
+            extracted_data = process_textract_response(response)
+            extracted_data['desired_occupations'] = user_occupations
+            extracted_data['experience_level'] = user_experience_level
+            extracted_data['cv_reference'] = f"s3://{bucket_name}/{file_key}"
+            extracted_data_final = json.dumps(extracted_data).encode('utf-8')
+            print(extracted_data_final)
+            
+            # Upload extracted data to S3
+            extracted_data_key = user_name.replace(' ', '_') + "_extracted.json"
+            upload_extracted_data_to_s3(extracted_data, extracted_data_key)
 
 st.set_page_config(page_title="Mentorship")
 st.title("Training Recommendations for Employees :books:")
@@ -197,7 +200,7 @@ if prompt:
             print("-----")
 
             # Query LLM with context
-            response = LLM(aws_key, aws_secret, prompt, extracted_data_final, courses, skills)
+            response = LLM(aws_key, aws_secret, prompt, extracted_data_final, courses, skills, job, exp)
             print(response)
         if response:
             st.markdown(response)
