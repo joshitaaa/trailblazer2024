@@ -29,6 +29,16 @@ bucket_name = 'unchanged-cvs'
 extracted_data_bucket = 'extracted-cvs-data'
 occupations_bucket = 'occupation-titles'
 
+# Initialize session state attributes if they do not exist
+if "exp" not in st.session_state:
+    st.session_state.exp = ''
+
+if "job" not in st.session_state:
+    st.session_state.job = ''
+
+if "cv" not in st.session_state:
+    st.session_state.cv = ''
+
 # Function to load occupation titles from S3
 def load_occupations_from_s3(bucket_name, key):
     s3_client = boto3.client('s3', aws_access_key_id=aws_key, aws_secret_access_key=aws_secret, region_name=region)
@@ -113,12 +123,7 @@ def process_textract_response(response):
 
     return extracted_data
 
-extracted_data_final = ''
-job = ''
-exp = ''
-
 experience_levels = ["Internship", "Entry level", "Associate", "Mid-Senior level", "Director", "Executive"]
-
 
 # Function to display the form
 def intro_form(occupations):
@@ -126,12 +131,13 @@ def intro_form(occupations):
         user_name = st.text_input("Name")
         user_occupations = st.multiselect("Select your desired occupations:", occupations)
         user_experience_level = st.selectbox("Select your experience level:", experience_levels)
-        exp = user_experience_level
-        job = occupations
         user_cv = st.file_uploader("Upload your CV below", type=["pdf", "docx"])
         submitted = st.form_submit_button("Submit")
     with st.spinner("File is uploading and analyzing..."):
         if submitted and user_name and user_cv:
+            st.session_state.exp = user_experience_level
+            st.session_state.job = ", ".join(user_occupations)
+
             # Upload CV to S3
             file_key = user_name.replace(' ', '_') + ".pdf"
             upload_file_to_s3(user_cv, file_key)
@@ -146,9 +152,9 @@ def intro_form(occupations):
             extracted_data['desired_occupations'] = user_occupations
             extracted_data['experience_level'] = user_experience_level
             extracted_data['cv_reference'] = f"s3://{bucket_name}/{file_key}"
-            extracted_data_final = json.dumps(extracted_data).encode('utf-8')
-            print(extracted_data_final)
-            
+            st.session_state.cv = json.dumps(extracted_data)
+            print("extract cv: " + st.session_state.cv)
+
             # Upload extracted data to S3
             extracted_data_key = user_name.replace(' ', '_') + "_extracted.json"
             upload_extracted_data_to_s3(extracted_data, extracted_data_key)
@@ -192,17 +198,18 @@ if prompt:
     with st.chat_message("assistant"):
         with st.spinner("Waiting for a response"):
             # Get KB for skills and courses 
-            skills = querySkill(kb_id, aws_key, aws_secret, job, prompt)
-            courses = queryCourse(kb_id, aws_key, aws_secret, job, prompt)
+            skills = querySkill(kb_id, aws_key, aws_secret, st.session_state.job, prompt)
+            courses = queryCourse(kb_id, aws_key, aws_secret, st.session_state.job, prompt)
             print(skills)
-            print("-----")
+            print(" --- ")
+            print(" --- ")
             print(courses)
-            print("-----")
+            print(" --- ")
+            print(" --- ")
 
             # Query LLM with context
-            response = LLM(aws_key, aws_secret, prompt, extracted_data_final, courses, skills, job, exp)
+            response = LLM(aws_key, aws_secret, prompt, st.session_state.cv, courses, skills, st.session_state.job, st.session_state.exp)
             print(response)
         if response:
             st.markdown(response)
-
     st.session_state.chat_history.append({"role": "assistant", "content": response if response else "Error in response"})
